@@ -119,3 +119,105 @@ def render_customer_market(df, df_curr):
         use_container_width=True, 
         hide_index=True
     )
+
+    # ==========================================================================
+    # PHASE 2: Customer Churn Risk Analysis Section
+    # ==========================================================================
+    st.markdown("---")
+    st.subheader("⚠️ Customer Churn Risk Analysis")
+    
+    from src.analysis import compute_churn_risk_scores
+    churn_df = compute_churn_risk_scores(df)
+    
+    if churn_df.empty:
+        st.info("No customer data available for churn analysis.")
+    else:
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        
+        high_risk = len(churn_df[churn_df['risk_level'] == 'High'])
+        medium_risk = len(churn_df[churn_df['risk_level'] == 'Medium'])
+        low_risk = len(churn_df[churn_df['risk_level'] == 'Low'])
+        total_customers = len(churn_df)
+        
+        col1.metric(
+            "🔴 High Risk", 
+            high_risk,
+            delta=f"{(high_risk/total_customers*100):.1f}% of customers" if total_customers > 0 else None,
+            delta_color="inverse"
+        )
+        col2.metric(
+            "🟡 Medium Risk", 
+            medium_risk,
+            delta=f"{(medium_risk/total_customers*100):.1f}% of customers" if total_customers > 0 else None,
+            delta_color="off"
+        )
+        col3.metric(
+            "🟢 Low Risk", 
+            low_risk,
+            delta=f"{(low_risk/total_customers*100):.1f}% of customers" if total_customers > 0 else None,
+            delta_color="normal"
+        )
+        
+        # Risk filter
+        risk_filter = st.multiselect(
+            "Filter by Risk Level",
+            options=['High', 'Medium', 'Low'],
+            default=['High', 'Medium']
+        )
+        
+        if risk_filter:
+            filtered = churn_df[churn_df['risk_level'].isin(risk_filter)].copy()
+        else:
+            filtered = churn_df.copy()
+        
+        # Prepare display columns
+        display_cols = ['Name of client', 'churn_risk_score', 'risk_level', 
+                       'days_since_last', 'total_volume']
+        
+        # Add trend columns if data available
+        trend_cols = ['frequency_trend', 'volume_trend', 'variety_trend']
+        for col in trend_cols:
+            if col in filtered.columns and filtered[col].notna().any():
+                display_cols.append(col)
+        
+        # Display table
+        st.dataframe(
+            filtered[display_cols].head(50).style.format({
+                "churn_risk_score": "{:.0f}",
+                "total_volume": "{:,.0f}",
+                "frequency_trend": "{:.1f}%",
+                "volume_trend": "{:.1f}%",
+                "variety_trend": "{:.1f}%"
+            }, na_rep="-"),
+            column_config={
+                "Name of client": st.column_config.TextColumn("Customer"),
+                "churn_risk_score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    format="%.0f",
+                    min_value=0,
+                    max_value=100
+                ),
+                "risk_level": st.column_config.TextColumn("Risk Level"),
+                "days_since_last": st.column_config.NumberColumn("Days Since Last Order"),
+                "total_volume": st.column_config.TextColumn("Total Volume (KG)"),
+                "frequency_trend": st.column_config.TextColumn("Freq Trend %"),
+                "volume_trend": st.column_config.TextColumn("Vol Trend %"),
+                "variety_trend": st.column_config.TextColumn("Variety Trend %"),
+            },
+            use_container_width=True,
+            hide_index=True,
+            height=400
+        )
+        
+        # Export high-risk customers
+        high_risk_df = churn_df[churn_df['risk_level'] == 'High']
+        if not high_risk_df.empty:
+            csv = high_risk_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Export High-Risk Customers (CSV)",
+                data=csv,
+                file_name="high_risk_customers.csv",
+                mime="text/csv"
+            )
+

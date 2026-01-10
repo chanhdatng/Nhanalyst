@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from src.utils import filter_by_date
 
 def render_growth_insights(df_curr, df_prev, selected_years, selected_months, current_year_val, single_year_mode, has_prev_year, df, selected_regions):
@@ -414,3 +415,151 @@ def render_growth_insights(df_curr, df_prev, selected_years, selected_months, cu
                 d_type_prev = pd.DataFrame(columns=df_curr.columns)
                 
             render_yoy_analysis_helper(d_type_curr, d_type_prev, p_type)
+
+    # ==========================================================================
+    # PHASE 2: Growth Decomposition Analysis Section
+    # ==========================================================================
+    st.markdown("---")
+    st.subheader("📊 Growth Decomposition Analysis")
+    st.caption("Decompose volume growth into key components: New customers, Expansion, Churn, and Mix impact.")
+    
+    from src.analysis import compute_growth_decomposition
+    decomp = compute_growth_decomposition(df_curr, df_prev)
+    
+    if decomp is None:
+        st.warning("⚠️ No previous period data available for growth decomposition. Please select a year with previous year data available.")
+    else:
+        # Summary metrics
+        col1, col2 = st.columns(2)
+        
+        growth_color = "normal" if decomp['total_growth'] >= 0 else "inverse"
+        
+        col1.metric(
+            "Total Growth",
+            f"{decomp['total_growth']:,.0f} KG",
+            f"{decomp['total_growth_pct']:+.1f}%",
+            delta_color=growth_color
+        )
+        col2.metric(
+            "Volume Comparison",
+            f"{decomp['volume_curr']:,.0f} KG (Current)",
+            f"vs {decomp['volume_prev']:,.0f} KG (Previous)",
+            delta_color="off"
+        )
+        
+        # Waterfall chart
+        components = decomp['components']
+        
+        waterfall_data = [
+            ('Previous Volume', decomp['volume_prev'], 'absolute'),
+            ('New Customers', components['new_customers'], 'relative'),
+            ('Expansion', components['expansion'], 'relative'),
+            ('Churn', components['churn'], 'relative'),
+            ('Price Impact', components['price_impact'], 'relative'),
+            ('Mix Impact', components['mix_impact'], 'relative'),
+            ('Current Volume', decomp['volume_curr'], 'total')
+        ]
+        
+        fig = go.Figure(go.Waterfall(
+            name="Growth Decomposition",
+            orientation="v",
+            measure=[d[2] for d in waterfall_data],
+            x=[d[0] for d in waterfall_data],
+            textposition="outside",
+            y=[d[1] for d in waterfall_data],
+            connector={"line": {"color": "rgb(63, 63, 63)"}},
+            increasing={"marker": {"color": "#4CAF50"}},
+            decreasing={"marker": {"color": "#F44336"}},
+            totals={"marker": {"color": "#2196F3"}}
+        ))
+        
+        fig.update_layout(
+            title="Volume Growth Waterfall",
+            showlegend=False,
+            height=500,
+            template="plotly_white",
+            yaxis_title="Volume (KG)",
+            xaxis_title=""
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Component breakdown table
+        st.markdown("**Detailed Component Breakdown:**")
+        
+        breakdown_data = []
+        for comp_name, display_name in [
+            ('new_customers', '🆕 New Customers'),
+            ('expansion', '📈 Expansion (Existing Customers)'),
+            ('churn', '🔻 Churn (Lost Customers)'),
+            ('price_impact', '📦 Order Size Impact'),
+            ('mix_impact', '🔀 Mix Impact')
+        ]:
+            value = components[comp_name]
+            pct = decomp['component_pct'][comp_name]
+            impact = 'Positive' if value > 0 else ('Negative' if value < 0 else 'Neutral')
+            breakdown_data.append({
+                'Component': display_name,
+                'Amount': value,
+                'Contribution %': pct,
+                'Impact': impact
+            })
+        
+        breakdown_df = pd.DataFrame(breakdown_data)
+        
+        def color_impact(val):
+            if val == 'Positive':
+                return 'color: #4CAF50; font-weight: bold'
+            elif val == 'Negative':
+                return 'color: #F44336; font-weight: bold'
+            return ''
+        
+        st.dataframe(
+            breakdown_df.style.format({
+                "Amount": "{:,.0f} KG",
+                "Contribution %": "{:.1f}%"
+            }).map(color_impact, subset=['Impact']),
+            column_config={
+                "Component": st.column_config.TextColumn("Growth Component"),
+                "Amount": st.column_config.NumberColumn("Amount (KG)"),
+                "Contribution %": st.column_config.NumberColumn("% of Total Growth"),
+                "Impact": st.column_config.TextColumn("Impact Type"),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Auto-insights
+        st.markdown("---")
+        st.subheader("💡 Key Insights")
+        
+        # Find biggest driver
+        comp_abs = {k: abs(v) for k, v in components.items()}
+        biggest = max(comp_abs, key=comp_abs.get)
+        
+        insight_map = {
+            'new_customers': ("🎯 **Customer Acquisition** is your primary growth driver.", 
+                             "Continue investing in acquisition channels. Focus on expanding reach to new markets."),
+            'expansion': ("📈 **Customer Expansion** is driving growth.", 
+                         "Your upsell/cross-sell strategies are working. Double down on account growth programs."),
+            'churn': ("⚠️ **Customer Churn** is the biggest challenge.", 
+                     "Focus on retention initiatives. Identify at-risk customers and implement win-back campaigns."),
+            'price_impact': ("📦 **Order Size Changes** have the largest impact.", 
+                            "Review order patterns. Consider incentives for larger orders."),
+            'mix_impact': ("🔀 **Product Mix Shift** is significant.", 
+                          "Analyze which products are gaining/losing share. Optimize portfolio accordingly.")
+        }
+        
+        if biggest in insight_map:
+            title, recommendation = insight_map[biggest]
+            if components[biggest] > 0 or biggest == 'churn':
+                st.info(f"{title}\n\n{recommendation}")
+            else:
+                st.warning(f"{title}\n\n{recommendation}")
+        
+        # Summary insight
+        if decomp['total_growth'] > 0:
+            st.success(f"✅ **Overall**: Volume grew by {decomp['total_growth']:,.0f} KG ({decomp['total_growth_pct']:+.1f}%). Strong performance!")
+        else:
+            st.error(f"⚠️ **Overall**: Volume declined by {abs(decomp['total_growth']):,.0f} KG ({decomp['total_growth_pct']:.1f}%). Action needed.")
+

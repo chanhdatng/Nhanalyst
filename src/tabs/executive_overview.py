@@ -71,12 +71,11 @@ def render_executive_overview(df_curr, df_prev, selected_years, selected_months,
                 # For now, pass.
                 pass
     
-    # Display Metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Revenue", f"{curr_rev:,.0f}", f"{growth_rev:.1%}" if growth_rev else None)
-    c2.metric("Total Volume (KG)", f"{curr_vol:,.0f}", f"{growth_vol:.1%}" if growth_vol else None)
-    c3.metric("Avg Order Value", f"{curr_aov:,.0f}", f"{growth_aov:.1%}" if growth_aov else None)
-    c4.metric("Active Clients", f"{curr_clients:,.0f}", f"{growth_clients:.1%}" if growth_clients else None)
+    # Display Metrics (removed Total Revenue since Sold = Volume not monetary)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Volume (KG)", f"{curr_vol:,.0f}", f"{growth_vol:.1%}" if growth_vol else None)
+    c2.metric("Avg Order Size (KG)", f"{curr_aov:,.0f}", f"{growth_aov:.1%}" if growth_aov else None)
+    c3.metric("Total Clients", f"{curr_clients:,.0f}", f"{growth_clients:.1%}" if growth_clients else None)
     
     if not has_prev_year:
         st.caption("ℹ️ Previous Year data not available. Comparisons are disabled.")
@@ -137,3 +136,70 @@ def render_executive_overview(df_curr, df_prev, selected_years, selected_months,
 
     fig_trend.update_layout(xaxis_title="Month", yaxis_title="Revenue", template="plotly_white", margin=dict(l=0,r=0,t=40,b=0))
     st.plotly_chart(fig_trend, use_container_width=True)
+
+    # ==========================================================================
+    # PHASE 2: Financial Health Score Section
+    # ==========================================================================
+    st.markdown("---")
+    st.subheader("💰 Financial Health Score")
+    
+    from src.analysis import compute_financial_health_score
+    health = compute_financial_health_score(df_curr, df_prev)
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        # Score gauge with color
+        score_color = {
+            'red': '#FF4444',
+            'yellow': '#FFB800',
+            'green': '#00C853'
+        }.get(health['color'], '#666')
+        
+        st.markdown(f"""
+        <div style="text-align: center; padding: 20px;
+                    background: linear-gradient(135deg, {score_color}22, {score_color}44);
+                    border-radius: 15px; border: 3px solid {score_color};">
+            <div style="font-size: 48px; font-weight: bold; color: {score_color};">
+                {health['score']}
+            </div>
+            <div style="font-size: 16px; color: #666; margin-top: 5px;">
+                Health Score
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Status indicator
+        status_text = {
+            'red': '🔴 Critical - Immediate Action Required',
+            'yellow': '🟡 Needs Attention - Monitor Closely',
+            'green': '🟢 Healthy - On Track'
+        }.get(health['color'], '⚪ Unknown')
+        
+        st.info(status_text)
+    
+    with col2:
+        st.markdown("**Score Components:**")
+        
+        component_labels = {
+            'volume_growth': '📈 Volume Growth',
+            'avg_order_size': '📦 Avg Order Size (KG)',
+            'retention': '🔄 Customer Retention',
+            'order_size_growth': '📊 Order Size Growth'
+        }
+        
+        for component, data in health['components'].items():
+            label = component_labels.get(component, component.replace('_', ' ').title())
+            value = data['value']
+            score = data['score']
+            weight = int(data['weight'] * 100)
+            
+            # Format value based on component type
+            if component in ['volume_growth', 'order_size_growth', 'retention']:
+                value_str = f"{value:+.1f}%" if component != 'retention' else f"{value:.1f}%"
+            else:
+                value_str = f"{value:,.0f} KG"
+            
+            st.markdown(f"**{label}** ({weight}% weight): {value_str} → Score: {score:.0f}/100")
+            st.progress(min(score / 100, 1.0))
+

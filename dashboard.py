@@ -199,7 +199,7 @@ def streamlit_app(df: pd.DataFrame = None):
 
     # === TAB 2: PRODUCT INTELLIGENCE ===
     with tab2:
-        render_product_intelligence(df_curr, selected_years)
+        render_product_intelligence(df_curr, selected_years, df=df)
 
     # === TAB 3: CUSTOMER & MARKET ===
     with tab3:

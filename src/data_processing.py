@@ -14,7 +14,7 @@ EXPECTED_COLS = [
 ]
 
 @st.cache_data(show_spinner=False)
-def load_data(file_path_or_buffer, csv_fallback=True, nrows=None) -> pd.DataFrame:
+def load_data(file_path_or_buffer, csv_fallback=True, nrows=None, read_all_sheets=False, usecols=None) -> pd.DataFrame:
     """Load Excel or CSV robustly.
     - file_path_or_buffer: path to .xlsx/.csv OR a file-like object (buffer)
     - nrows: optional for sampling
@@ -35,23 +35,21 @@ def load_data(file_path_or_buffer, csv_fallback=True, nrows=None) -> pd.DataFram
 
     try:
         if suffix == '.csv':
-            df = pd.read_csv(file_path_or_buffer, nrows=nrows)
+            df = pd.read_csv(file_path_or_buffer, nrows=nrows, usecols=usecols)
         else:
-            # Default to Excel - Read ALL sheets
-            dfs = pd.read_excel(file_path_or_buffer, nrows=nrows, engine='openpyxl', sheet_name=None)
-            
-            # If multiple sheets, concat
-            if isinstance(dfs, dict):
-                # Filter out empty sheets or metadata sheets if needed
-                # For now, just concat all frames
-                all_frames = []
-                for sheet_name, sheet_df in dfs.items():
-                    # Add sheet name as column for debugging/filtering if useful
-                    # sheet_df['Sheet'] = sheet_name 
-                    all_frames.append(sheet_df)
-                df = pd.concat(all_frames, ignore_index=True)
+            # Default to Excel - read only first sheet unless read_all_sheets=True
+            if read_all_sheets:
+                dfs = pd.read_excel(file_path_or_buffer, nrows=nrows, engine='openpyxl', sheet_name=None, usecols=usecols)
+                if isinstance(dfs, dict):
+                    all_frames = []
+                    for sheet_name, sheet_df in dfs.items():
+                        all_frames.append(sheet_df)
+                    df = pd.concat(all_frames, ignore_index=True)
+                else:
+                    df = dfs
             else:
-                df = dfs
+                # Read only the first sheet which is far faster for large Excel files
+                df = pd.read_excel(file_path_or_buffer, nrows=nrows, engine='openpyxl', sheet_name=0, usecols=usecols)
                 
     except Exception as e:
         # Fallback logic could go here, for now just re-raise
@@ -111,17 +109,18 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     # Use Quantity as Sold (Revenue) as per user request
     df['Sold'] = df['Quantity (KG)']
 
-    # Year/Month to integers
+    # Year/Month to integers (vectorized where possible)
     df['Year'] = pd.to_numeric(df['Year'], errors='coerce')
-    # Clean Month column before coercion
-    def clean_month_val(x):
-        if isinstance(x, str):
-            digits = re.findall(r'\d+', x)
-            return int(digits[0]) if digits else x
-        return x
-        
-    df['Month'] = df['Month'].apply(clean_month_val)
-    df['Month'] = pd.to_numeric(df['Month'], errors='coerce')
+
+    # Vectorized month extraction: extract digits from strings and coerce to numeric
+    # This avoids per-row Python loops which are slow on large frames
+    if 'Month' in df.columns:
+        # Convert to string first so str.extract works for mixed types
+        month_str = df['Month'].astype(str)
+        extracted = month_str.str.extract(r'(\d+)', expand=False)
+        df['Month'] = pd.to_numeric(extracted, errors='coerce')
+    else:
+        df['Month'] = pd.NA
 
     # Fill missing client names
     df['Name of client'] = df['Name of client'].fillna('Unknown client').astype(str)
@@ -141,32 +140,20 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         # Clean extra spaces
         df['Name of product'] = df['Name of product'].str.replace(r'\s+', ' ', regex=True)
 
-    # Synthetic date column 1st day of month (useful for time-series grouping)
-    def make_date(r):
-        try:
-            y = int(r['Year'])
-            m = r['Month']
-            
-            # Handle string months like 'R1', 'M01', etc.
-            if isinstance(m, str):
-                # Extract digits
-                digits = re.findall(r'\d+', m)
-                if digits:
-                    m = int(digits[0])
-                else:
-                    # Fallback to 1 if no digits found
-                    m = 1
-            
-            # Ensure m is within 1-12 range logic if needed, or just standard date
-            # If m is 0 or >12, date() will raise ValueError, so we catch it
-            return dt.date(y, m, 1)
-        except Exception:
-            return pd.NaT
+    # Synthetic date column 1st day of month (vectorized)
+    # Fill missing months with 1 (January) as a sensible default for grouping
+    month_filled = df['Month'].fillna(1).astype(int)
+    # Use pandas vectorized datetime constructor from dict to avoid apply
+    df[DEFAULT_DATE_COL] = pd.to_datetime(
+        {
+            'year': df['Year'].astype('Int64'),
+            'month': month_filled,
+            'day': 1
+        },
+        errors='coerce'
+    )
 
-    df[DEFAULT_DATE_COL] = df.apply(make_date, axis=1)
-    df[DEFAULT_DATE_COL] = pd.to_datetime(df[DEFAULT_DATE_COL])
-
-    # Drop rows without date
+    # Drop rows without date (invalid/missing Year or Month)
     df = df[~df[DEFAULT_DATE_COL].isna()].reset_index(drop=True)
 
     return df

@@ -36,6 +36,24 @@ def render_product_launching(df, df_curr, df_prev, current_year_val):
         if sel_kinds_launch:
             df_potential = df_potential[df_potential['Kind of fruit'].isin(sel_kinds_launch)]
         
+        # --- Exclude Products Feature (Compact inline) ---
+        if not df_potential.empty:
+            # Short label: Kind | Product (without Type since it's already filtered)
+            exclude_options = df_potential.groupby(['Name of product', 'Kind of fruit']).size().reset_index()[['Name of product', 'Kind of fruit']]
+            exclude_options['Label'] = exclude_options['Kind of fruit'] + " › " + exclude_options['Name of product'].str.replace('ANDROS PROFESSIONAL ', '', case=False)
+            exclude_options = exclude_options.sort_values('Label')
+            
+            excluded_labels = st.multiselect(
+                "🚫 Exclude products:",
+                options=exclude_options['Label'].tolist(),
+                key="launch_exclude_products",
+                help="Select products to hide from table"
+            )
+            
+            if excluded_labels:
+                excluded_products = exclude_options[exclude_options['Label'].isin(excluded_labels)]['Name of product'].tolist()
+                df_potential = df_potential[~df_potential['Name of product'].isin(excluded_products)]
+        
         # Identify "Launched" (New)
         curr_prods = set(df_potential['Name of product'].unique())
         num_kinds = df_potential['Kind of fruit'].nunique()
@@ -539,3 +557,166 @@ def render_product_launching(df, df_curr, df_prev, current_year_val):
                 )
                 fig_stack.update_layout(template="plotly_white", barnorm='percent', yaxis_title="% Volume", xaxis_title=main_col)
                 st.plotly_chart(fig_stack, use_container_width=True)
+
+    # ==========================================================================
+    # PHASE 2: Launch Velocity Analysis Section
+    # ==========================================================================
+    st.markdown("---")
+    st.subheader("🚀 Launch Velocity Analysis")
+    st.caption("Track the momentum of newly launched products. Velocity measures growth from Month 1 to Month 3.")
+    
+    from src.analysis import compute_launch_velocity
+    velocity_df = compute_launch_velocity(df)
+    
+    if velocity_df.empty:
+        st.info("ℹ️ No products launched in the last 12 months with sufficient data (minimum 3 months). Launch velocity tracking will appear when new products have enough history.")
+    else:
+        # Summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        fast = len(velocity_df[velocity_df['velocity_category'] == 'Fast'])
+        moderate = len(velocity_df[velocity_df['velocity_category'] == 'Moderate'])
+        slow = len(velocity_df[velocity_df['velocity_category'] == 'Slow'])
+        declining = len(velocity_df[velocity_df['velocity_category'] == 'Declining'])
+        avg_velocity = velocity_df['velocity_pct'].mean()
+        
+        col1.metric("🚀 Fast Launches", fast, help="Products with >100% velocity")
+        col2.metric("🏃 Moderate Launches", moderate, help="Products with 50-100% velocity")
+        col3.metric("🐌 Slow Launches", slow + declining, help="Products with <50% velocity")
+        col4.metric("Average Velocity", f"{avg_velocity:.1f}%", help="Mean velocity across all new products")
+        
+        # Bar chart
+        fig = px.bar(
+            velocity_df.head(20),  # Top 20 products
+            x='Name of product',
+            y='velocity_pct',
+            color='velocity_category',
+            title="Launch Velocity by Product (Top 20)",
+            color_discrete_map={
+                'Fast': '#4CAF50',
+                'Moderate': '#FF9800',
+                'Slow': '#9E9E9E',
+                'Declining': '#F44336'
+            },
+            labels={'velocity_pct': 'Velocity (%)', 'Name of product': 'Product'},
+            text='velocity_pct'
+        )
+        
+        fig.update_traces(texttemplate='%{text:.0f}%', textposition='outside')
+        fig.update_layout(
+            xaxis_tickangle=-45,
+            template="plotly_white",
+            height=500,
+            showlegend=True
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Filters
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            velocity_filter = st.multiselect(
+                "Filter by Velocity Category",
+                options=['Fast', 'Moderate', 'Slow', 'Declining'],
+                default=['Fast', 'Moderate', 'Slow'],
+                key="velocity_cat_filter"
+            )
+        
+        with col2:
+            min_age = st.slider(
+                "Minimum Age (months)", 
+                min_value=3, 
+                max_value=12, 
+                value=3,
+                key="velocity_age_slider"
+            )
+        
+        # Apply filters
+        filtered = velocity_df[
+            (velocity_df['velocity_category'].isin(velocity_filter)) &
+            (velocity_df['age_months'] >= min_age)
+        ] if velocity_filter else velocity_df[velocity_df['age_months'] >= min_age]
+        
+        # Table
+        if not filtered.empty:
+            display_cols = [
+                'velocity_emoji', 'Name of product', 'age_months', 'velocity_pct',
+                'm1_volume', 'm3_volume', 'current_volume', 'm1_customers', 'm3_customers'
+            ]
+            
+            st.dataframe(
+                filtered[display_cols].style.format({
+                    "velocity_pct": "{:.1f}%",
+                    "m1_volume": "{:,.0f}",
+                    "m3_volume": "{:,.0f}",
+                    "current_volume": "{:,.0f}"
+                }),
+                column_config={
+                    "velocity_emoji": st.column_config.TextColumn("", width="small"),
+                    "Name of product": st.column_config.TextColumn("Product"),
+                    "age_months": st.column_config.NumberColumn("Age (Mo)"),
+                    "velocity_pct": st.column_config.TextColumn("Velocity %"),
+                    "m1_volume": st.column_config.TextColumn("M1 Vol (KG)"),
+                    "m3_volume": st.column_config.TextColumn("M3 Vol (KG)"),
+                    "current_volume": st.column_config.TextColumn("Total Vol (KG)"),
+                    "m1_customers": st.column_config.NumberColumn("M1 Customers"),
+                    "m3_customers": st.column_config.NumberColumn("M3 Customers"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+            
+            # Best/Worst performers
+            st.markdown("---")
+            st.subheader("💡 Launch Performance Insights")
+            
+            col1, col2 = st.columns(2)
+            
+            best_launch = filtered.iloc[0]
+            worst_launch = filtered.iloc[-1] if len(filtered) > 1 else filtered.iloc[0]
+            
+            with col1:
+                st.success(f"""
+**🏆 Best Performer**: {best_launch['Name of product']}
+- Velocity: {best_launch['velocity_pct']:.1f}%
+- M1 → M3: {best_launch['m1_volume']:,.0f} KG → {best_launch['m3_volume']:,.0f} KG
+- Total Volume: {best_launch['current_volume']:,.0f} KG
+- Customer Growth: {best_launch['m1_customers']} → {best_launch['m3_customers']}
+                """)
+            
+            with col2:
+                if worst_launch['velocity_pct'] < 50:
+                    st.warning(f"""
+**⚠️ Needs Attention**: {worst_launch['Name of product']}
+- Velocity: {worst_launch['velocity_pct']:.1f}%
+- M1 → M3: {worst_launch['m1_volume']:,.0f} KG → {worst_launch['m3_volume']:,.0f} KG
+- Consider: Marketing boost, customer outreach, or repositioning
+                    """)
+                else:
+                    st.info(f"""
+**📊 Moderate Performer**: {worst_launch['Name of product']}
+- Velocity: {worst_launch['velocity_pct']:.1f}%
+- M1 → M3: {worst_launch['m1_volume']:,.0f} KG → {worst_launch['m3_volume']:,.0f} KG
+- Solid performance, monitor for optimization opportunities
+                    """)
+        else:
+            st.info("No products match the selected filters.")
+        
+        # Benchmarks
+        with st.expander("📈 Launch Velocity Benchmarks"):
+            st.markdown("""
+**Understanding Velocity Scores:**
+
+| Category | Velocity | Interpretation | Action |
+|----------|----------|----------------|--------|
+| 🚀 **Fast** | >100% | Excellent product-market fit | Scale quickly, invest in inventory |
+| 🏃 **Moderate** | 50-100% | Healthy growth trajectory | Monitor and optimize |
+| 🐌 **Slow** | 0-50% | Below expectations | Review strategy, consider pivot |
+| 📉 **Declining** | <0% | Volume decreasing | Urgent action needed |
+
+**Calculation:** Velocity = (M3 Volume - M1 Volume) / M1 Volume × 100
+
+*Higher velocity indicates faster market adoption and stronger product-market fit.*
+            """)
+

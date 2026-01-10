@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(planning)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
