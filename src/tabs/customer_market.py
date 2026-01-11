@@ -43,11 +43,11 @@ def render_customer_market(df, df_curr):
     st.subheader("🏆 Top Clients")
     
     # Channel Filter
-    avail_channels = sorted(df['Channel by Sales Person'].dropna().unique()) if 'Channel by Sales Person' in df.columns else []
+    avail_channels = sorted(df['New Channel'].dropna().unique()) if 'New Channel' in df.columns else []
     selected_channels = st.multiselect("Filter by Channel (Sales Person):", options=avail_channels, default=avail_channels)
     
-    if selected_channels:
-            df_clients_src = df_curr[df_curr['Channel by Sales Person'].isin(selected_channels)]
+    if selected_channels and 'New Channel' in df_curr.columns:
+            df_clients_src = df_curr[df_curr['New Channel'].isin(selected_channels)]
     else:
             df_clients_src = df_curr
     
@@ -64,8 +64,8 @@ def render_customer_market(df, df_curr):
             
             # Filter for 6m & Channel
             df_6m_gap = df[(df[DEFAULT_DATE_COL] >= cutoff_gap) & (df[DEFAULT_DATE_COL] <= max_d)]
-            if selected_channels:
-                df_6m_gap = df_6m_gap[df_6m_gap['Channel by Sales Person'].isin(selected_channels)]
+            if selected_channels and 'New Channel' in df_6m_gap.columns:
+                df_6m_gap = df_6m_gap[df_6m_gap['New Channel'].isin(selected_channels)]
             
             # Universe: All fruits sold in this period/channel per Type
             type_universe = df_6m_gap.groupby('Type of product')['Kind of fruit'].unique().apply(set).to_dict()

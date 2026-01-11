@@ -134,9 +134,9 @@ def render_product_launching(df, df_curr, df_prev, current_year_val):
                         hide_index=True
                     )
 
-        # Custom Gradient
+        # Custom Gradient - dark mode compatible
         def highlight_total(s):
-            return ['background-color: #f0fdf4; color: #166534; font-weight: bold'] * len(s)
+            return ['background-color: #f0fdf4; color: #000000; font-weight: bold'] * len(s)
 
         def custom_greens(s):
             if s.empty: return [''] * len(s)

@@ -30,7 +30,7 @@ def mock_df_small():
             'Type of product': f'Type {i % 2}',
             'Region': 'US',
             'Country': 'United States',
-            'Channel by Sales Person': f'Channel {i % 2}'
+            'New Channel': f'Channel {i % 2}'
         })
     return pd.DataFrame(data)
 
@@ -54,7 +54,7 @@ def mock_df_large():
         'Type of product': [f'Type {i}' for i in np.random.randint(0, 5, rows)],
         'Region': np.random.choice(['US', 'EU', 'APAC'], rows),
         'Country': np.random.choice(['United States', 'Germany', 'Japan'], rows),
-        'Channel by Sales Person': np.random.choice(['Channel A', 'Channel B'], rows)
+        'New Channel': np.random.choice(['Channel A', 'Channel B'], rows)
     }
     return pd.DataFrame(data)
 
@@ -65,7 +65,7 @@ def mock_df_empty():
     return pd.DataFrame(columns=[
         'date__ym', 'Sold', 'Quantity (KG)', 'Name of client',
         'Name of product', 'Year', 'Month', 'SKU', 'Kind of fruit',
-        'Type of product', 'Region', 'Country', 'Channel by Sales Person'
+        'Type of product', 'Region', 'Country', 'New Channel'
     ])
 
 
@@ -85,7 +85,7 @@ def mock_df_edge_cases():
         'Type of product': ['Type A'] * 10,
         'Region': ['US'] * 10,
         'Country': ['United States'] * 10,
-        'Channel by Sales Person': ['Channel A'] * 10
+        'New Channel': ['Channel A'] * 10
     })
 
 
@@ -158,6 +158,6 @@ def generate_large_dataset(rows: int = 100000) -> pd.DataFrame:
         'Type of product': [f'Type {i}' for i in np.random.randint(0, 5, rows)],
         'Region': np.random.choice(['US', 'EU', 'APAC'], rows),
         'Country': np.random.choice(['United States', 'Germany', 'Japan'], rows),
-        'Channel by Sales Person': np.random.choice(['Channel A', 'Channel B'], rows)
+        'New Channel': np.random.choice(['Channel A', 'Channel B'], rows)
     }
     return pd.DataFrame(data)

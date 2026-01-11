@@ -48,6 +48,7 @@ from src.tabs.customer_market import render_customer_market
 from src.tabs.growth_insights import render_growth_insights
 from src.tabs.vietnam_focus import render_vietnam_focus
 from src.tabs.product_launching import render_product_launching
+from src.tabs.product_type_growth import render_product_type_growth
 
 # -------------------------
 # Streamlit App
@@ -63,15 +64,24 @@ def streamlit_app(df: pd.DataFrame = None):
     raw_cols = []
     if df is None:
         st.info("No file provided via CLI. Please upload your Sales Data (Excel or CSV).")
+
+        # Clear cache button
+        if st.button("🔄 Clear Cache & Reload"):
+            st.cache_data.clear()
+            st.rerun()
+
         uploaded_file = st.file_uploader("Upload Sales Data", type=['xlsx', 'xls', 'csv'])
         if uploaded_file is not None:
             try:
+                # Clear cache when new file uploaded to ensure fresh data
+                st.cache_data.clear()
+
                 # Load Raw
                 df_raw = load_data(uploaded_file)
                 raw_cols = list(df_raw.columns)
-                
+
                 # Check for Multiple Sheets? read_excel reads 1st by default.
-                
+
                 # Clean
                 df = clean_data(df_raw)
             except Exception as e:
@@ -89,10 +99,20 @@ def streamlit_app(df: pd.DataFrame = None):
     # Debug Info
     with st.sidebar.expander("🛠 Data Debug Info"):
         st.write(f"**Rows loaded (Cleaned):** {len(df)}")
-        # st.write(f"**Raw Columns (Before Clean):** {raw_cols}") # raw_cols might be empty if CLI
+        st.write(f"**Total Columns:** {len(df.columns)}")
         st.write(f"**Cleaned Columns:** {list(df.columns)}")
         st.write("**Unique Years:**", df['Year'].unique())
         st.write("**Unique Regions:**", df['Region'].unique())
+        # Check for New Channel column
+        if 'New Channel' in df.columns:
+            st.success(f"✅ 'New Channel' column found! Values: {df['New Channel'].nunique()} unique")
+            st.write("Sample values:", df['New Channel'].dropna().unique()[:10].tolist())
+        else:
+            st.error("❌ 'New Channel' column NOT found!")
+            # Show columns containing 'channel' (case-insensitive)
+            channel_cols = [c for c in df.columns if 'channel' in c.lower()]
+            if channel_cols:
+                st.write("Similar columns found:", channel_cols)
         st.write("First 3 rows (Cleaned):")
         st.dataframe(df.head(3))
     
@@ -129,11 +149,11 @@ def streamlit_app(df: pd.DataFrame = None):
          
     # Channel Filter (Checkbox)
     selected_channels = []
-    if 'Channel by Sales Person' in df.columns:
-        unique_channels = sorted(df['Channel by Sales Person'].dropna().unique().tolist())
+    if 'New Channel' in df.columns:
+        unique_channels = sorted(df['New Channel'].dropna().unique().tolist())
         selected_channels = checkbox_filter('Select Channels', unique_channels, key_prefix="channel_filter")
     else:
-        pass
+        st.sidebar.info("ℹ️ Column 'New Channel' not found")
         
     # Country Filter (Checkbox)
     selected_countries = []
@@ -147,11 +167,12 @@ def streamlit_app(df: pd.DataFrame = None):
     df_curr = df_curr[df_curr['Region'].isin(selected_regions)]
     
     # Apply Channel Filter
-    if 'Channel by Sales Person' in df.columns and selected_channels:
-        df_curr = df_curr[df_curr['Channel by Sales Person'].isin(selected_channels)]
-    elif 'Channel by Sales Person' in df.columns and not selected_channels:
-        st.warning("Please select at least one Channel.")
-        st.stop()
+    if 'New Channel' in df.columns:
+        if selected_channels:
+            df_curr = df_curr[df_curr['New Channel'].isin(selected_channels)]
+        else:
+            st.warning("Please select at least one Channel.")
+            st.stop()
         
     # Apply Country Filter
     if 'Country' in df.columns and selected_countries:
@@ -177,8 +198,8 @@ def streamlit_app(df: pd.DataFrame = None):
             df_prev = df_prev[df_prev['Region'].isin(selected_regions)]
             
             # Apply Channel Filter
-            if 'Channel by Sales Person' in df.columns and selected_channels:
-                df_prev = df_prev[df_prev['Channel by Sales Person'].isin(selected_channels)]
+            if 'New Channel' in df.columns and selected_channels:
+                df_prev = df_prev[df_prev['New Channel'].isin(selected_channels)]
                 
             # Apply Country Filter
             if 'Country' in df.columns and selected_countries:
@@ -191,7 +212,7 @@ def streamlit_app(df: pd.DataFrame = None):
     title_text = f"🚀 Business Performance: {', '.join(map(str, selected_years))}" if len(selected_years) <= 3 else f"🚀 Business Performance: {len(selected_years)} Years Selected"
     st.title(title_text)
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Executive Overview", "📦 Product Intelligence", "👥 Customer & Market", "📈 Growth & Insights", "🇻🇳 Vietnam Focus", "🚀 Product Launching"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Executive Overview", "📦 Product Intelligence", "👥 Customer & Market", "📈 Growth & Insights", "🇻🇳 Vietnam Focus", "🚀 Product Launching", "📈 Type Growth"])
 
     # === TAB 1: EXECUTIVE OVERVIEW ===
     with tab1:
@@ -216,6 +237,10 @@ def streamlit_app(df: pd.DataFrame = None):
     # === TAB 6: PRODUCT LAUNCHING ===
     with tab6:
         render_product_launching(df, df_curr, df_prev, current_year_val)
+
+    # === TAB 7: PRODUCT TYPE GROWTH ===
+    with tab7:
+        render_product_type_growth(df, df_curr, selected_years)
 
 
 # -------------------------

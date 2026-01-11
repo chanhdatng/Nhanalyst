@@ -30,7 +30,7 @@ def apply_custom_styles():
         border-radius: 4px;
     }
     
-    /* Tabs */
+    /* Tabs - dark mode compatible */
     .stTabs [data-baseweb="tab-list"] {
         gap: 20px;
     }
@@ -39,13 +39,16 @@ def apply_custom_styles():
         white-space: pre-wrap;
         background-color: transparent;
         border-radius: 8px;
-        color: #555;
         font-weight: 600;
         padding: 0 20px;
     }
     .stTabs [aria-selected="true"] {
         background-color: #F0F4FF;
-        color: #1E90FF;
+        color: #1E90FF !important;
+    }
+    /* Ensure selected tab text is visible */
+    .stTabs [aria-selected="true"] p {
+        color: #1E90FF !important;
     }
     </style>
     """, unsafe_allow_html=True)

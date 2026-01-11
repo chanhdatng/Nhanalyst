@@ -158,12 +158,12 @@ def render_executive_overview(df_curr, df_prev, selected_years, selected_months,
         
         st.markdown(f"""
         <div style="text-align: center; padding: 20px;
-                    background: linear-gradient(135deg, {score_color}22, {score_color}44);
+                    background: #ffffff;
                     border-radius: 15px; border: 3px solid {score_color};">
             <div style="font-size: 48px; font-weight: bold; color: {score_color};">
                 {health['score']}
             </div>
-            <div style="font-size: 16px; color: #666; margin-top: 5px;">
+            <div style="font-size: 16px; color: #333333; margin-top: 5px;">
                 Health Score
             </div>
         </div>
